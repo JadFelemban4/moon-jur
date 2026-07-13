@@ -4586,7 +4586,13 @@ function drawWristPanel() {
 
   // small persistent controls: sound + language, top corner
   hudButton(ctx, HUD_W - 96, 14, 82, 40, audio.isEnabled() ? '🔊' : '🔇', () => {
-    audio.unlock(); audio.setEnabled(!audio.isEnabled()); drawWristPanel();
+    audio.unlock();
+    const soundEnabled = audio.setEnabled(!audio.isEnabled());
+    const lessonCard = app.hud.mode === 'lesson' && currentCard
+      ? { stageIndex: sm.currentIndex, cardIndex: currentCard.index }
+      : null;
+    lessonNarration.setEnabled(soundEnabled, lessonCard);
+    drawWristPanel();
   }, { color: 'rgba(245,158,11,.85)' });
   hudButton(ctx, 14, 14, 82, 40, ar ? 'EN' : 'ع', () => {
     language.toggle(); refreshHUD();
@@ -5499,6 +5505,7 @@ function openLesson() {
   app.hud.blocking = true;
   app.hud.mode = 'lesson';
   renderLessonCard();
+  lessonNarration.play(sm.currentIndex, currentCard.index);
 }
 function renderLessonCard() {
   app.hud.lesson = {
@@ -5512,6 +5519,7 @@ function renderLessonCard() {
 }
 function lessonNext() {
   audio.click();
+  lessonNarration.stop();
   if (currentCard.done) {
     app.hud.blocking = false;
     app.hud.mode = 'stage';
@@ -5521,6 +5529,7 @@ function lessonNext() {
   }
   currentCard = sm.nextLesson();
   renderLessonCard();
+  lessonNarration.play(sm.currentIndex, currentCard.index);
 }
 
 /* ---------------- quiz ---------------- */
@@ -5551,6 +5560,7 @@ const AMBIENTS = ['control', null, 'space', 'space', 'space']; // S2 manages its
 function next() {
   const res = sm.advance();
   if (!res.moved) { toast(language.getLang() === 'ar' ? res.ar : res.en, 'err'); return; }
+  lessonNarration.stop();
   audio.click();
   if (res.finished) { audio.success(); showCertificate(res.certificate); return; }
   SCENE_BUILDERS[res.index]();

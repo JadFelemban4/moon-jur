@@ -129,3 +129,48 @@ test('playback rejection resolves false instead of breaking lesson flow', async 
     assert.equal(await narration.play(2, 1), false);
   });
 });
+
+test('open and next card transitions coordinate narration in order', () => {
+  const openLesson = functionSource('openLesson');
+  const lessonNext = functionSource('lessonNext');
+
+  assert.match(
+    openLesson,
+    /renderLessonCard\(\);\s*lessonNarration\.play\(sm\.currentIndex, currentCard\.index\);/
+  );
+
+  const stop = lessonNext.indexOf('lessonNarration.stop();');
+  const doneCheck = lessonNext.indexOf('if (currentCard.done)');
+  const nextCard = lessonNext.indexOf('currentCard = sm.nextLesson();');
+  const nextPlay = lessonNext.indexOf('lessonNarration.play(sm.currentIndex, currentCard.index);');
+  assert.ok(stop >= 0 && stop < doneCheck);
+  assert.ok(nextCard > doneCheck && nextCard < nextPlay);
+});
+
+test('language redraw does not restart narration', () => {
+  assert.doesNotMatch(functionSource('renderLessonCard'), /lessonNarration/);
+});
+
+test('wrist sound toggle synchronizes procedural and lesson audio', () => {
+  const panel = functionSource('drawWristPanel');
+  assert.match(
+    panel,
+    /const soundEnabled = audio\.setEnabled\(!audio\.isEnabled\(\)\);/
+  );
+  assert.match(
+    panel,
+    /lessonNarration\.setEnabled\(soundEnabled, lessonCard\);/
+  );
+  assert.match(
+    panel,
+    /app\.hud\.mode === 'lesson' && currentCard/
+  );
+});
+
+test('successful stage advance stops stale narration before rebuilding the scene', () => {
+  const advance = functionSource('next');
+  const blockedGuard = advance.indexOf('if (!res.moved)');
+  const stop = advance.indexOf('lessonNarration.stop();');
+  const rebuild = advance.indexOf('SCENE_BUILDERS[res.index]();');
+  assert.ok(stop > blockedGuard && stop < rebuild);
+});
