@@ -71,3 +71,18 @@
 - مجلد staging حق Vercel في scratchpad مؤقت — قد يختفي بين الجلسات (طريقة الاسترجاع في Context.md).
 - المرحلة S3 (المدار) ما تلمّست هالجلسة — ما زالت discoveries بالضغط فقط؛ مرشحة لنفس ترقية "المهام" لو طلبها.
 - الشهادة (cert) على لوحة المعصم ما اختُبرت فعلياً حتى نهاية رحلة كاملة.
+
+## 2026-07-13 — instruction-card narration
+
+- Added automatic MP3 narration for all 15 instruction cards using `source/audio_tracks/{stage}.{card}.mp3`.
+- A single reusable media element prevents overlap; Next stops/reset the old track before the new one starts.
+- The wrist sound toggle now controls narration as well as WebAudio effects and ambience.
+- Language redraws do not restart narration, and playback failure never blocks progress.
+- Automated verification: `node --test tests/instruction-card-audio.test.js` and the inline-script syntax check.
+- Quest 3 verification still required:
+  1. Open stage 1 instructions and confirm `1.1.mp3` starts automatically.
+  2. Press Next mid-track and confirm the old voice stops before `1.2.mp3` starts.
+  3. Mute mid-track, confirm silence, then unmute and confirm the same card restarts.
+  4. Switch AR/EN mid-track and confirm the voice does not restart.
+  5. Finish card 3 and confirm no narration continues into exploration.
+  6. Enter a later stage and confirm its matching numbered files play.

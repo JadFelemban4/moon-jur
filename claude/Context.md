@@ -48,3 +48,12 @@
 - Vercel CLI v50 مثبت. مشروع `moon-vr-deploy` (staging folder بأي مكان فيه `.vercel/project.json`؛ المجلد الحالي في scratchpad الجلسة — لو ضاع، أعد الربط بـ `vercel link` أو انشر بمجلد جديد وسمّ المشروع نفسه).
 - الرابط الثابت: https://moon-vr-deploy.vercel.app — عام بدون حماية (مطلوب للنظارة).
 - لا يوجد git repo في مجلد المشروع حالياً (انتبه: الـ home directory فيه repo عام آخر — لا تسوي git init/commit هنا بدون طلب).
+
+## Recorded instruction-card narration
+
+- `createLessonNarration()` owns one reusable HTML `Audio` element for the 15 files in `source/audio_tracks/`.
+- The zero-based stage/card indices map to `{stage + 1}.{card + 1}.mp3`.
+- `openLesson()` and `lessonNext()` start narration only on real card transitions; `renderLessonCard()` never starts audio because language changes also call it.
+- Next, lesson close, stage advance, and global mute stop and reset the current narration.
+- Re-enabling sound while a lesson card is open replays that card from the beginning.
+- Playback errors are swallowed so text learning and xAPI progression remain available.
