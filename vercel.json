@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/", "destination": "/MOON-JOURNEY-02-VR.html" }
+  ]
+}
