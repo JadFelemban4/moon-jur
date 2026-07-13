@@ -4178,6 +4178,44 @@ function createAudioEngine() {
   };
 }
 
+function createLessonNarration({
+  AudioCtor = window.Audio,
+  isSoundEnabled = () => true,
+  basePath = 'source/audio_tracks'
+} = {}) {
+  const player = new AudioCtor();
+  player.preload = 'auto';
+  player.addEventListener('error', () => {}, false);
+
+  function stop() {
+    player.pause();
+    try { player.currentTime = 0; } catch (e) {}
+  }
+
+  async function play(stageIndex, cardIndex) {
+    stop();
+    if (!isSoundEnabled()) return false;
+    player.src = `${basePath}/${stageIndex + 1}.${cardIndex + 1}.mp3`;
+    try {
+      await player.play();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function setEnabled(enabled, currentCard) {
+    if (!enabled) {
+      stop();
+      return Promise.resolve(false);
+    }
+    if (currentCard) return play(currentCard.stageIndex, currentCard.cardIndex);
+    return Promise.resolve(false);
+  }
+
+  return { play, stop, setEnabled };
+}
+
 /* ================= AmadXR Moon Journey v2 — Web visual layer =================
    Models embedded: SLS-class rocket + separable parts (SRBs, core stage, ICPS,
    LAS fairing), Orion spacecraft, NASA Lunar Module (quantized), Moon (LRO
@@ -4187,6 +4225,10 @@ const language = createLanguage('ar');
 const xapi = createXAPI();
 const sm = createSceneManager({ xapi, language });
 const audio = createAudioEngine();
+const lessonNarration = createLessonNarration({
+  AudioCtor: window.Audio,
+  isSoundEnabled: () => audio.isEnabled()
+});
 
 const app = {
   scene: null, camera: null, renderer: null,
