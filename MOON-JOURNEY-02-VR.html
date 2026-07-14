@@ -4039,7 +4039,8 @@ function createSceneManager({ xapi, language }) {
       if (def.procedure) st.stepIndex = def.procedure.length;
       def.discoveries.forEach(d => st.discovered.add(d));
       st.quizPassed = true;
-    }
+    },
+    _setStage(i) { currentIndex = i; } // test helper: jump straight to a stage (desktop dev harness)
   };
 }
 
@@ -4813,7 +4814,7 @@ const SCENE_BUILDERS = [
        rocket occluding the tower. */
     app.player.position.set(140, 1.7, 170); app.camera.position.set(0, 0, 0);
     app.setLook(-10, 55, -10); snapPlayerYaw(app.baseLookTarget);
-    setWalkable(true, 130);
+    setWalkable(true, 260); // spawn is ~220 units out; bounds must exceed that or movement is clamped from step one
   },
 
   /* S2 — Inside the cockpit: learner-driven launch, watch
@@ -5378,17 +5379,32 @@ const SCENE_BUILDERS = [
     app.player.position.set(0, 5, 24); app.camera.position.set(0, 0, 0); app.setLook(0, 1.5, 0); snapPlayerYaw(app.baseLookTarget);
   },
 
-  /* S5 — Lunar surface: one sculpted 36×36m floor model with the crater, mare
-     and regolith built into the terrain. Discoveries bind to the invisible
-     Trigger_* meshes the artist placed in the file; lander at the flat
-     landing zone at the origin. */
+  /* S5 — Lunar surface: sculpted crater/mare/regolith terrain, scaled up 4×
+     (36m → ~144m) so the features read as real geology instead of toy-scale
+     bumps, sitting on a large plain that extends it to the horizon so the
+     world never visibly "ends" a few steps out. Discoveries bind to the
+     invisible Trigger_* meshes the artist placed in the file; lander at the
+     flat landing zone at the origin. */
   function s5() {
     freshScene(0x05070f);
-    const earth = new THREE.Mesh(new THREE.SphereGeometry(2.4, 40, 40), new THREE.MeshStandardMaterial({ map: earthTex }));
-    earth.position.set(-14, 16, -42); app.scene.add(earth);
+    const earth = new THREE.Mesh(new THREE.SphereGeometry(6, 40, 40), new THREE.MeshStandardMaterial({ map: earthTex }));
+    earth.position.set(-40, 45, -140); app.scene.add(earth);
     app.anim.push(() => { earth.rotation.y = app.t * 0.05; });
 
+    // large lunar plain under/around the sculpted patch — gently undulating,
+    // same gray tone as the sculpted terrain — so there's no horizon "edge"
+    const plainGeo = new THREE.PlaneGeometry(900, 900, 96, 96);
+    const pp = plainGeo.attributes.position;
+    for (let i = 0; i < pp.count; i++) {
+      pp.setZ(i, Math.sin(pp.getX(i) * 0.05) * Math.cos(pp.getY(i) * 0.045) * 1.4 + (Math.random() - 0.5) * 0.4);
+    }
+    plainGeo.computeVertexNormals();
+    const plain = new THREE.Mesh(plainGeo, new THREE.MeshStandardMaterial({ color: 0x8b929c, roughness: 1 }));
+    plain.rotation.x = -Math.PI / 2; plain.position.y = -0.15; app.scene.add(plain);
+
+    const FLOOR_SCALE = 4;
     const floor = MODELS.moonfloor.clone(true);
+    floor.scale.setScalar(FLOOR_SCALE);           // Trigger_* children scale with it — the tour below reads their live world positions, no other change needed
     app.scene.add(floor);
     const TRIGGERS = { Trigger_Crater: 's5_crater', Trigger_Mare: 's5_mare', Trigger_Regolith: 's5_regolith' };
     const tour = [];
@@ -5406,8 +5422,9 @@ const SCENE_BUILDERS = [
     lm.position.set(0, 0, 0); app.scene.add(lm);
     lm.traverse(o => { if (o.isMesh) reg(o, 's5_lander'); });
 
-    // guided-tour lesson: spotlight hops across the features
-    const spot = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.8, 40), new THREE.MeshBasicMaterial({ color: COL.gold, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+    // guided-tour lesson: spotlight hops across the features (ring sized up
+    // to stay visible/proportional against the now-larger terrain features)
+    const spot = new THREE.Mesh(new THREE.RingGeometry(2.8, 3.6, 40), new THREE.MeshBasicMaterial({ color: COL.gold, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
     spot.rotation.x = -Math.PI / 2; spot.position.set(tour[0] ? tour[0][0] : 0, 0.8, tour[0] ? tour[0][1] : 0);
     app.scene.add(spot);
     let ti = 0;
@@ -5419,8 +5436,12 @@ const SCENE_BUILDERS = [
     });
     app.onLessonEnd = () => { clearInterval(tTimer); app.scene.remove(spot); };
 
-    app.player.position.set(0, 4.5, 10); app.camera.position.set(0, 0, 0); app.setLook(0, 1.5, -8); snapPlayerYaw(app.baseLookTarget);
-    setWalkable(true, 16);
+    // real ground-level eye height (not an elevated viewing platform), stood
+    // back far enough to take in the lander and the now-larger surroundings;
+    // 25 units from center comfortably inside the new walkBounds below —
+    // same mismatch class as the S1 bug, checked this time before shipping
+    app.player.position.set(0, 1.7, 25); app.camera.position.set(0, 0, 0); app.setLook(0, 1.5, -15); snapPlayerYaw(app.baseLookTarget);
+    setWalkable(true, 70);
   }
 ];
 
