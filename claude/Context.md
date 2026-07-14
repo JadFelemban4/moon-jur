@@ -11,7 +11,7 @@
 | `xapi` | تسجيل أحداث تعلم (initialized/discovered/…) |
 | `sm` (state machine) | حالة المراحل: `stageDef/stageState/markDiscovery/performStep/nextLesson/answerQuiz/advance/canAdvance` — **`markDiscovery` يرفض قبل إتمام الدرس (locked)** |
 | `audio` | أصوات مولدة (click/chime/error/success/boom/countdown/rumble + ambient) |
-| `MDL_*` base64 | النماذج المضمنة: `MDL_SLS/SRBL/SRBR/LAS/CORE/ICPS/ORION` (عتاد حديث من المستخدم) + `MDL_LANDER/MOONFLOOR` (سطح القمر: لاندر + أرضية منحوتة 36×36م فيها الفوهة/البحر/الريغوليث) + `MDL_MOON` (LRO). تُفك في `loadModels()` → `MODELS.*` |
+| `MDL_*` base64 | النماذج المضمنة: `MDL_SLS/SRBL/SRBR/LAS/CORE/ICPS/ORION` (عتاد حديث من المستخدم) + `MDL_LANDER/MOONFLOOR` (سطح القمر) + `MDL_PAD39B` (بيئة منصة الإطلاق، **مقياس واقعي 1:1** — 420×105×420م) + `MDL_MOON` (LRO). تُفك في `loadModels()` → `MODELS.*` |
 | `MAT_TINTS` / `applyMatTints` | إصلاح ألوان مواد بالاسم بعد التحميل (`Mat_Mare`/`Mat_Lunar_Floor`/`Mat_LM_Gold_Foil`/`Mat_Dark_Nozzle`) — ملفات GLB الأصلية تُركت كما سلّمها المستخدم. **و`Mat_Invisible_Trigger` يُجعل شفافاً بالكود** (opacity 0 + transparent) لأن `visible=false` كان سيعطّل الـ raycast على التريغرات |
 | `app` | الحالة العامة: renderer، camera، **player (rig)**، controllers، raycaster، anim[]، stepTargets[]، **actionTargets[]**، hud{} |
 | `initGL()` | renderer + rig + كنترولرز (ray+tip) + `initHudPanels()` + `addVRButton()` |
@@ -34,7 +34,8 @@
 - **S4 المهام**: متغير `task` (1 مسافة → 2 تصحيح → 3 كبح → 4 مدار). السرعة `dt*0.042`. نافذة الكبح `travel ∈ [0.84, 0.92]` — نقاطها تتلون **أحمر** (أحمر = مكابح، ونصوص التوجيه تقول "النقاط الحمراء" — غيّر الاثنين معاً لو عدّلت اللون). فوات القمر عند 0.97 → إعادة من 0.62. **`award()` لازم يُستدعى قبل تقدم المهمة** (يفشل locked لو الدرس ما خلص). دفعة التصحيح: لهب `startCorrectionBurn()` والمكوك يثبت مكانه ويرتفع حتى `drift=0` ثم `task=3`.
 - الكونسول في S2 ينسحب تحت الأرض بعد إتمام الخطوات (anim ينزل `consoleG` ثم يصفّر `stepTargets`).
 - **أحداث الانفصال في S2** (`jettison()` داخل s2): بعد طبقة index 1 (ستراتو) ينفصل المعززان، بعد index 3 (ثيرمو) برج الهروب، وعند المدار المرحلة الأساسية — الـ toast مؤجل ~3s حتى لا يطمس toast الاكتشاف (لوحة toast واحدة).
-- **مناطق S1** مضبوطة بالنسب المئوية من ارتفاع نموذج SLS (مقاسة من لقطة شاشة فعلية): محركات 0–7% r=0.62، مرحلة أساسية 8–67% r=0.42، معززان أسطوانتان r=0.28 عند x=±0.75 من 0.5–63%، القسم العلوي 69–100%. **الأنصاف مضبوطة بحيث لا تتقاطع الأسطوانات أبداً** — أي تداخل هندسي بين colliders يخلي الراي يصيب "المنطقة الغلط" (حصلت وانصلحت). `bandCyl()` مرتين لنفس المفتاح آمن (تكرار الليبل يمنعه `_labeledKeys`).
+- **مناطق S1** مضبوطة بالنسب المئوية من ارتفاع الصاروخ (مقاسة أصلاً من لقطة شاشة فعلية): محركات 0–7%، مرحلة أساسية 8–67%، معززان أسطوانتان عند x=±0.75×SCALE من 0.5–63%، القسم العلوي 69–100%. **الأنصاف مضبوطة بحيث لا تتقاطع الأسطوانات أبداً** — أي تداخل هندسي بين colliders يخلي الراي يصيب "المنطقة الغلط" (حصلت وانصلحت). `bandCyl()` مرتين لنفس المفتاح آمن (تكرار الليبل يمنعه `_labeledKeys`).
+- **S1 أعيد بناؤه بمقياس واقعي 1:1** (2026-07-14): بيئة `MODELS.pad39b` (LC-39B-style: hardstand، تريتش، برج حقيقي، خزان ماء، crawlerway، مستنقع وأشجار — 420×105×420م) حلّت محل الأرضية/المنصة/البرج الابتدائي. الصاروخ يرتفع الآن H=98 (بدل 11 بالديوراما القديمة) — **كل شي متعلق بأبعاد الصاروخ (مناطق الاكتشاف، نصف قطر حلقة التمييز) مضروب بـ`SCALE = H/11 ≈ 8.909`** حتى تبقى النسب اللي انضبطت بالديوراما صحيحة بالمقياس الجديد. الكاميرا الآن بارتفاع عين واقعي (1.7م) بدل الارتفاع المرتفع القديم (كان منطقياً بس بمقياس اللعبة الصغير) — المسافة/الزاوية اختيرت افتراضياً بدون اختبار حقيقي على النظارة، **ينتظر تأكيد المستخدم**. `PAD_Y=0.7` تطابق موضع node اسمه `Pad_Hardstand` بالنموذج.
 - **`pulse()` فيها حارس `_pulsing`** — بدونه الضغط المتكرر وسط النبضة يلتقط الحجم المتضخم كأساس ويكبر الأوبجكت/الليبل تدريجياً مع كل ضغطة (باغ حقيقي انصلح).
 - **`hudButton` يعمل `ctx.save()/restore()`** — أي دالة رسم مشتركة على كانفس اللوحة لازم تحفظ/ترجع حالة الـ ctx؛ تسريب `textAlign='center'` منها كان يقصّ بدايات كل سطور اللوحة (باغ حقيقي انصلح 2026-07-08). الهامش الداخلي padX=34 وعرض اللف HUD_W−68.
 - **نافذة S2 دائرية** (porthole): bulkhead `RingGeometry(0.85, 3.4)` + إطار torus + حلقة توهج + 8 براغي، بنفس موضع/ميلان الإطار القديم (0, 1.62, −1.55 / rot.x −0.42).
@@ -43,17 +44,29 @@
 - `labelPlate(text,w,h,bg,fg)` لوحات نص قابلة للضغط، فيها `userData.repaint(color)` لإعادة الرسم بعلامة ✓.
 - **أدوات معاينة النماذج**: viewer.html + shot.js (Playwright headless + سيرفر محلي + مسطرة نسب مئوية) — كانت في scratchpad الجلسة `sls-viewer/`؛ أعد بناءها عند الحاجة: صفحة تحمّل GLB وتصوّره بكاميرا front/angle مع خطوط كل 10% من الارتفاع.
 
-## النشر
+## النشر (أعيد تصميمها 2026-07-13)
 
-- Vercel CLI v50 مثبت. مشروع `moon-vr-deploy` (staging folder بأي مكان فيه `.vercel/project.json`؛ المجلد الحالي في scratchpad الجلسة — لو ضاع، أعد الربط بـ `vercel link` أو انشر بمجلد جديد وسمّ المشروع نفسه).
-- الرابط الثابت: https://moon-vr-deploy.vercel.app — عام بدون حماية (مطلوب للنظارة).
-- لا يوجد git repo في مجلد المشروع حالياً (انتبه: الـ home directory فيه repo عام آخر — لا تسوي git init/commit هنا بدون طلب).
+- **المستودع**: https://github.com/JadFelemban4/moon-jur.git، فرع `main` — منقول لـ git بعد ما كان محلي بدون تتبع. مربوط بـ Vercel Git Integration (alias `moon-vr-deploy-git-main-...` يؤكد الربط).
+- **النشر تلقائي**: أي `git push origin main` يطلق نشراً جديداً خلال ~15-30 ثانية، بدون أي أمر Vercel يدوي.
+- **`vercel.json` بجذر المشروع ضروري**: النشر عبر git يرفع بنية المستودع كما هي (لا نسخة معزولة بـ `index.html`)، واسم ملف الإنتاج `MOON-JOURNEY-02-VR.html` مو `index.html` — بدون الـ rewrite، `/` يرجع 404 (هذا بالضبط اللي صار يوم 2026-07-13 لما اتصل GitHub لأول مرة، قبل ما نضيف الملف).
+  ```json
+  { "rewrites": [ { "source": "/", "destination": "/MOON-JOURNEY-02-VR.html" } ] }
+  ```
+- **فائدة جانبية مهمة**: بما إن النشر يرفع كامل بنية المستودع، أي مسار نسبي داخل الكود (زي `source/audio_tracks/1.1.mp3`) يشتغل صح تلقائياً — ما نحتاج نعتني بنسخ ملفات مساعدة لمجلد النشر يدوياً زي قبل.
+- الرابط الثابت (ثابت، ما يتغيّر بين النشرات): https://moon-vr-deploy.vercel.app — عام بدون حماية (Deployment Protection معطّلة عمداً، مطلوب للنظارة).
+- **طريقة يدوية بديلة (متروكة، للطوارئ فقط)**: `vercel deploy --yes --prod` من مجلد staging فيه نسخة `index.html` + `.vercel/project.json` مربوط بنفس المشروع — هذي كانت الطريقة الوحيدة قبل ربط git، بس تنشر نسخة معزولة (بدون `source/`)، فأي مسار نسبي يعتمد على ملفات خارج الـ HTML (زي الصوتيات) ينكسر معها. استخدمها بس لو تعطّل ربط GitHub.
+- **تحقق دايماً بعد push**: `curl -o /dev/null -w "%{http_code}" https://moon-vr-deploy.vercel.app/` = 200، مو بس نجاح أمر git.
 
 ## Recorded instruction-card narration
 
-- `createLessonNarration()` owns one reusable HTML `Audio` element for the 15 files in `source/audio_tracks/`.
-- The zero-based stage/card indices map to `{stage + 1}.{card + 1}.mp3`.
-- `openLesson()` and `lessonNext()` start narration only on real card transitions; `renderLessonCard()` never starts audio because language changes also call it.
-- Next, lesson close, stage advance, and global mute stop and reset the current narration.
-- Re-enabling sound while a lesson card is open replays that card from the beginning.
-- Playback errors are swallowed so text learning and xAPI progression remain available.
+**المصدر**: الملفات الـ15 بـ`source/audio_tracks/` مولّدة بـ **ElevenLabs** (Text-to-Speech)، صوت (voice ID) `C1npRmjB19a6yNkEucvx` — **ملاحظة من المستخدم: قد يتغيّر هذا المعرّف مستقبلاً**، تأكد منه معه قبل توليد أي دفعة جديدة. النص المصدر (السكربت) لكل مقطع لم يُحدَّد بعد إذا كان نفس نص بطاقات الدرس بالكود (`DICT`/lesson keys) أو ملف سكربت منفصل — **اسأل المستخدم قبل توليد أي مقاطع جديدة إذا احتجت تعرف النص المصدر بالضبط**.
+
+**الوضع الحالي (2026-07-13): لغة عربية فقط.** الكود يشغّل نفس الملف `{stage}.{card}.mp3` بغض النظر عن لغة الواجهة المعروضة (قرار تصميم مقصود موثّق بـ`docs/superpowers/specs/2026-07-13-instruction-card-audio-design.md`) — **لكن هذا حالياً يعكس كون التسجيل الإنجليزي لسا ما اتسوّى**، مو قرار نهائي بعدم دعم لغتين. لو تمت إضافة نسخة إنجليزية مستقبلاً، الكود يحتاج تعديل حقيقي (مو بس ملفات جديدة) — راجع `handoff.md` قسم "فجوات معروفة".
+
+**آلية التشغيل** (`createLessonNarration()`):
+- تملك عنصر `Audio` واحد قابل لإعادة الاستخدام لكل الـ15 ملف.
+- الفهارس صفرية الأساس بالكود تتحول لاسم الملف بـ`{stage + 1}.{card + 1}.mp3`.
+- `openLesson()` و`lessonNext()` يشغّلان السرد بس عند انتقال حقيقي بين الكروت؛ `renderLessonCard()` ما يشغّل صوت أبداً لأن تبديل اللغة يستدعيها أيضاً (وإلا كان الصوت يعيد نفسه عند تبديل اللغة).
+- الضغط على التالي، إغلاق الدرس، الانتقال لمرحلة جديدة، وكتم الصوت العام — كلها توقف وتصفّر السرد الحالي.
+- إعادة تفعيل الصوت وسط بطاقة مفتوحة يعيد تشغيل نفس البطاقة من البداية.
+- أخطاء التشغيل تُبلع بصمت — الدرس النصي وتقدّم xAPI يستمران حتى لو فشل تحميل/تشغيل الصوت.
