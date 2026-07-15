@@ -4730,10 +4730,24 @@ function attachFloatingLabel(mesh, key, autoSizeLabel) {
     k = Math.min(10, Math.max(1, Math.max(size.x, size.z) / 1.5));
   }
   const topY = (bb ? bb.max.y : 0.5) + 0.4 * k;
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: floatingLabelTexture(shortLabel(key)), transparent: true, depthTest: false }));
-  spr.scale.set(1.7 * k, 0.42 * k, 1);
+  const sprMat = new THREE.SpriteMaterial({ map: floatingLabelTexture(shortLabel(key)), transparent: true, depthTest: false });
+  const spr = new THREE.Sprite(sprMat);
+  if (autoSizeLabel) {
+    // S1 is a labelled-diagram walkthrough viewed from a FIXED aerial vantage
+    // ~220 units out; world-scaled sprites (even the big autosized ones) shrink
+    // to unreadable text at that range. Constant screen-size labels stay legible
+    // regardless of distance (proper callout style). Anchor at each part's
+    // CENTER (not top): the core stage and the flanking boosters share the same
+    // vertical extent, so top-anchored labels bunch and overlap — centering
+    // spreads them apart along the stack.
+    sprMat.sizeAttenuation = false;
+    spr.scale.set(0.15, 0.0375, 1); // ~4:1 to match the 320x80 label texture
+    spr.position.set(0, 0, 0);
+  } else {
+    spr.scale.set(1.7, 0.42, 1);    // fixed world size everywhere else (unchanged)
+    spr.position.set(0, topY, 0);
+  }
   spr.renderOrder = 999;
-  spr.position.set(0, topY, 0);
   spr.userData.labelKey = key;
   mesh.add(spr);
 }
@@ -5418,84 +5432,37 @@ const SCENE_BUILDERS = [
      flat landing zone at the origin. */
   function s5() {
     freshScene(0x05070f);
-    // without these two, the flat plain meets the black starfield at a
-    // hard, close, featureless line — reads as a small platform floating
-    // in the void, not a huge surface, no matter how far the geometry
-    // actually extends (verified with a screenshot standing at the edge).
-    // Exponential fog fades the ground gradually instead of cutting off,
-    // and a ring of distant hill silhouettes breaks the dead-flat horizon
-    // line — together these are what actually sell "vast lunar plain"
-    // (the geometry enlargement alone did not).
-    app.scene.fog = new THREE.FogExp2(0x05070f, 0.008);
-    const earth = new THREE.Mesh(new THREE.SphereGeometry(6, 40, 40), new THREE.MeshStandardMaterial({ map: earthTex }));
-    earth.position.set(-40, 45, -140); app.scene.add(earth);
+    const earth = new THREE.Mesh(new THREE.SphereGeometry(2.4, 40, 40), new THREE.MeshStandardMaterial({ map: earthTex }));
+    earth.position.set(-14, 16, -42); app.scene.add(earth);
     app.anim.push(() => { earth.rotation.y = app.t * 0.05; });
 
-    // large lunar plain under/around the sculpted patch — gently undulating,
-    // same gray tone as the sculpted terrain — so there's no horizon "edge"
-    const plainGeo = new THREE.PlaneGeometry(900, 900, 96, 96);
-    const pp = plainGeo.attributes.position;
-    for (let i = 0; i < pp.count; i++) {
-      pp.setZ(i, Math.sin(pp.getX(i) * 0.05) * Math.cos(pp.getY(i) * 0.045) * 1.4 + (Math.random() - 0.5) * 0.4);
-    }
-    plainGeo.computeVertexNormals();
-    const plain = new THREE.Mesh(plainGeo, new THREE.MeshStandardMaterial({ color: 0x8b929c, roughness: 1 }));
-    plain.rotation.x = -Math.PI / 2; plain.position.y = -0.15; app.scene.add(plain);
-
-    // distant hill silhouettes, scattered in a ring past the sculpted patch —
-    // fog fades them into the sky, but their jagged tops break the horizon
-    // line so it doesn't read as a hard edge into empty space
-    const hillMat = new THREE.MeshBasicMaterial({ color: 0x454a52 });
-    for (let i = 0; i < 36; i++) {
-      const ang = (i / 36) * Math.PI * 2 + (Math.random() - 0.5) * 0.15;
-      const rad = 170 + Math.random() * 70;
-      const h = 10 + Math.random() * 22;
-      const hill = new THREE.Mesh(new THREE.ConeGeometry(h * (0.8 + Math.random() * 0.6), h, 7), hillMat);
-      hill.position.set(Math.cos(ang) * rad, h / 2 - 4, Math.sin(ang) * rad);
-      app.scene.add(hill);
-    }
-
-    const FLOOR_SCALE = 4;
     const floor = MODELS.moonfloor.clone(true);
-    floor.scale.setScalar(FLOOR_SCALE);           // Trigger_* children scale with it — the tour below reads their live world positions, no other change needed
     app.scene.add(floor);
 
-    // the single sculpted moonfloor GLB only carries generic gray materials
-    // (Mat_Lunar_Floor/Mat_Moon_Rock) — unlike the old separate per-feature
-    // models, it has no color cue for crater/mare/regolith. Paint a soft
-    // colored ground patch at each trigger so the three read as distinct
-    // again, same as the original tinted-model version.
-    function radialTex(hex) {
-      const c = document.createElement('canvas'); c.width = c.height = 128;
-      const ctx = c.getContext('2d');
-      const col = '#' + hex.toString(16).padStart(6, '0');
-      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      g.addColorStop(0, col); g.addColorStop(0.7, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
-      return new THREE.CanvasTexture(c);
+    // extend the Moon far past the sculpted 36m area so the trainee reads it as
+    // a big world, not four props side by side. Kept deliberately simple: one
+    // large, gently rolling gray lunar plain, tone-matched to the sculpted
+    // terrain. No fog and a hard horizon against the stars — the Moon has no
+    // atmosphere, so that reads correctly and stays primitive/simple. The plain
+    // is flat right around the sculpted patch (undulation ramps in only past it,
+    // so no bump ever pokes up through the detailed floor) and sits just below
+    // the floor's measured lowest point so the crater floor never shows through.
+    const fbox = new THREE.Box3().setFromObject(floor);
+    const plainGeo = new THREE.PlaneGeometry(1800, 1800, 100, 100);
+    const pv = plainGeo.attributes.position;
+    for (let i = 0; i < pv.count; i++) {
+      const x = pv.getX(i), z = pv.getY(i);
+      const ramp = Math.max(0, Math.min(1, (Math.hypot(x, z) - 30) / 130)); // 0 near patch → 1 far out
+      pv.setZ(i, (Math.sin(x * 0.02) * Math.cos(z * 0.018) * 3.2 + (Math.random() - 0.5) * 0.8) * ramp);
     }
-    function groundPatch(x, y, z, radius, hex, opacity) {
-      const mesh = new THREE.Mesh(
-        new THREE.CircleGeometry(radius, 32),
-        new THREE.MeshBasicMaterial({ map: radialTex(hex), transparent: true, opacity, depthWrite: false })
-      );
-      mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, y + 0.05, z);
-      app.scene.add(mesh);
-    }
-    // a flat disc has zero vertical profile — from a standing eye-level
-    // view looking across it near-edge-on it nearly vanishes. A torus lying
-    // flat still has real height (its tube), so it stays visible as a rim
-    // from the side, not just from above.
-    function patchRim(x, y, z, radius, hex) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.5, 8, 40), new THREE.MeshBasicMaterial({ color: hex }));
-      ring.rotation.x = Math.PI / 2; ring.position.set(x, y + 0.15, z);
-      app.scene.add(ring);
-    }
-    const PATCH = {
-      s5_crater:   { color: 0x16181c, radius: 10, opacity: 0.85, rim: 0x9aa2ad }, // impact shadow, bright ejecta rim
-      s5_mare:     { color: 0x3f4652, radius: 16, opacity: 0.9,  rim: 0x6b93ff }, // basalt sea (same dark tone as the old Mat_Mare tint), cool blue rim hints at "sea"
-      s5_regolith: { color: 0xcdb99a, radius: 10, opacity: 0.55, rim: 0xf0dfc0 }  // loose dusty soil, bright sandy rim
-    };
+    plainGeo.computeVertexNormals();
+    // same lunar-gray tint as the sculpted floor, but scaled down: the flat
+    // plain's up-facing normals catch the full ambient+sun (~1.7x) and would
+    // blow out to white, while the sculpted floor's varied normals sit partly
+    // shaded — the factor makes the lit plain READ as the same gray as the objects.
+    const plainColor = new THREE.Color(MAT_TINTS.Mat_Lunar_Floor).multiplyScalar(0.5);
+    const plain = new THREE.Mesh(plainGeo, new THREE.MeshStandardMaterial({ color: plainColor, roughness: 1 }));
+    plain.rotation.x = -Math.PI / 2; plain.position.y = fbox.min.y - 0.15; app.scene.add(plain);
 
     const TRIGGERS = { Trigger_Crater: 's5_crater', Trigger_Mare: 's5_mare', Trigger_Regolith: 's5_regolith' };
     const tour = [];
@@ -5505,12 +5472,6 @@ const SCENE_BUILDERS = [
       o.traverse(m => { if (m.isMesh) reg(m, key); });
       const wp = new THREE.Vector3(); o.getWorldPosition(wp);
       tour.push([wp.x, wp.z]);
-      const p = PATCH[key];
-      // use the trigger's own world Y, not a flat guess — it marks the
-      // actual local terrain height (craters dip well below the general
-      // ground level; a flat y put patches floating over/buried under the
-      // real sculpted surface, invisible from most angles)
-      if (p) { groundPatch(wp.x, wp.y, wp.z, p.radius, p.color, p.opacity); patchRim(wp.x, wp.y, wp.z, p.radius, p.rim); }
     });
     tour.push([0, 0]);   // ...and the lander at the landing zone
 
@@ -5519,9 +5480,8 @@ const SCENE_BUILDERS = [
     lm.position.set(0, 0, 0); app.scene.add(lm);
     lm.traverse(o => { if (o.isMesh) reg(o, 's5_lander'); });
 
-    // guided-tour lesson: spotlight hops across the features (ring sized up
-    // to stay visible/proportional against the now-larger terrain features)
-    const spot = new THREE.Mesh(new THREE.RingGeometry(2.8, 3.6, 40), new THREE.MeshBasicMaterial({ color: COL.gold, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+    // guided-tour lesson: spotlight hops across the features
+    const spot = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.8, 40), new THREE.MeshBasicMaterial({ color: COL.gold, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
     spot.rotation.x = -Math.PI / 2; spot.position.set(tour[0] ? tour[0][0] : 0, 0.8, tour[0] ? tour[0][1] : 0);
     app.scene.add(spot);
     let ti = 0;
@@ -5533,12 +5493,8 @@ const SCENE_BUILDERS = [
     });
     app.onLessonEnd = () => { clearInterval(tTimer); app.scene.remove(spot); };
 
-    // real ground-level eye height (not an elevated viewing platform), stood
-    // back far enough to take in the lander and the now-larger surroundings;
-    // 25 units from center comfortably inside the new walkBounds below —
-    // same mismatch class as the S1 bug, checked this time before shipping
-    app.player.position.set(0, 1.7, 25); app.camera.position.set(0, 0, 0); app.setLook(0, 1.5, -15); snapPlayerYaw(app.baseLookTarget);
-    setWalkable(true, 70);
+    app.player.position.set(0, 4.5, 10); app.camera.position.set(0, 0, 0); app.setLook(0, 1.5, -8); snapPlayerYaw(app.baseLookTarget);
+    setWalkable(true, 16);
   }
 ];
 
