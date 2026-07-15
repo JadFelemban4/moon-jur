@@ -4723,9 +4723,14 @@ function attachFloatingLabel(mesh, key) {
   app._labeledKeys.add(key);
   mesh.geometry.computeBoundingBox();
   const bb = mesh.geometry.boundingBox;
-  const topY = (bb ? bb.max.y : 0.5) + 0.4;
+  // scale the card with the collider it sits on (never smaller than the
+  // original fixed size) — a card sized for the old toy-diorama colliders
+  // reads as tiny next to S1's real-scale rocket (r*SCALE, SCALE≈8.9)
+  const size = bb ? bb.getSize(new THREE.Vector3()) : new THREE.Vector3(1, 1, 1);
+  const k = Math.min(10, Math.max(1, Math.max(size.x, size.z) / 1.5));
+  const topY = (bb ? bb.max.y : 0.5) + 0.4 * k;
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: floatingLabelTexture(shortLabel(key)), transparent: true, depthTest: false }));
-  spr.scale.set(1.7, 0.42, 1);
+  spr.scale.set(1.7 * k, 0.42 * k, 1);
   spr.renderOrder = 999;
   spr.position.set(0, topY, 0);
   spr.userData.labelKey = key;
@@ -4761,8 +4766,12 @@ const SCENE_BUILDERS = [
      factor as the old diorama (H went 11 → 98, factor ×8.909) so the visual
      proportions that were already tuned stay correct at the new scale. */
   function s1() {
-    freshScene(0x101c33);
-    app.stars.material.opacity = 0.35;
+    // morning daylight on Earth's surface, not deep space — no stars, warm
+    // bright sky (this scene inherited the old toy-diorama's space-black
+    // background + starfield, which never got revisited when the real
+    // launch-pad environment replaced it)
+    freshScene(0x8fd0f5);
+    app.stars.material.opacity = 0;
 
     const env = MODELS.pad39b.clone(true);            // real-world scale already, no normalized()
     app.scene.add(env);
@@ -5393,6 +5402,15 @@ const SCENE_BUILDERS = [
      landing zone at the origin. */
   function s5() {
     freshScene(0x05070f);
+    // without these two, the flat plain meets the black starfield at a
+    // hard, close, featureless line — reads as a small platform floating
+    // in the void, not a huge surface, no matter how far the geometry
+    // actually extends (verified with a screenshot standing at the edge).
+    // Exponential fog fades the ground gradually instead of cutting off,
+    // and a ring of distant hill silhouettes breaks the dead-flat horizon
+    // line — together these are what actually sell "vast lunar plain"
+    // (the geometry enlargement alone did not).
+    app.scene.fog = new THREE.FogExp2(0x05070f, 0.008);
     const earth = new THREE.Mesh(new THREE.SphereGeometry(6, 40, 40), new THREE.MeshStandardMaterial({ map: earthTex }));
     earth.position.set(-40, 45, -140); app.scene.add(earth);
     app.anim.push(() => { earth.rotation.y = app.t * 0.05; });
@@ -5407,6 +5425,19 @@ const SCENE_BUILDERS = [
     plainGeo.computeVertexNormals();
     const plain = new THREE.Mesh(plainGeo, new THREE.MeshStandardMaterial({ color: 0x8b929c, roughness: 1 }));
     plain.rotation.x = -Math.PI / 2; plain.position.y = -0.15; app.scene.add(plain);
+
+    // distant hill silhouettes, scattered in a ring past the sculpted patch —
+    // fog fades them into the sky, but their jagged tops break the horizon
+    // line so it doesn't read as a hard edge into empty space
+    const hillMat = new THREE.MeshBasicMaterial({ color: 0x454a52 });
+    for (let i = 0; i < 36; i++) {
+      const ang = (i / 36) * Math.PI * 2 + (Math.random() - 0.5) * 0.15;
+      const rad = 170 + Math.random() * 70;
+      const h = 10 + Math.random() * 22;
+      const hill = new THREE.Mesh(new THREE.ConeGeometry(h * (0.8 + Math.random() * 0.6), h, 7), hillMat);
+      hill.position.set(Math.cos(ang) * rad, h / 2 - 4, Math.sin(ang) * rad);
+      app.scene.add(hill);
+    }
 
     const FLOOR_SCALE = 4;
     const floor = MODELS.moonfloor.clone(true);
