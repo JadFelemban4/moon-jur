@@ -4816,8 +4816,12 @@ const SCENE_BUILDERS = [
        enough to frame the full stack + tower. Tower sits to the -X/-Z side
        of the pad, so the vantage is offset +X/+Z to see both without the
        rocket occluding the tower. */
-    app.player.position.set(140, 1.7, 170); app.camera.position.set(0, 0, 0);
-    app.setLook(-10, 55, -10); snapPlayerYaw(app.baseLookTarget);
+    // elevated "flying over the pad" vantage (user preferred this over a
+    // ground-level view — it shows the whole complex at once); same x/z
+    // framing as before (already tuned so the rocket doesn't occlude the
+    // tower), just raised from eye height to an aerial altitude
+    app.player.position.set(140, 80, 170); app.camera.position.set(0, 0, 0);
+    app.setLook(-10, 35, -10); snapPlayerYaw(app.baseLookTarget);
     setWalkable(true, 260); // spawn is ~220 units out; bounds must exceed that or movement is clamped from step one
   },
 
@@ -5408,6 +5412,35 @@ const SCENE_BUILDERS = [
     const floor = MODELS.moonfloor.clone(true);
     floor.scale.setScalar(FLOOR_SCALE);
     app.scene.add(floor);
+
+    // the single sculpted moonfloor GLB only carries generic gray materials
+    // (Mat_Lunar_Floor/Mat_Moon_Rock) — unlike the old separate per-feature
+    // models, it has no color cue for crater/mare/regolith. Paint a soft
+    // colored ground patch at each trigger so the three read as distinct
+    // again, same as the original tinted-model version.
+    function radialTex(hex) {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const ctx = c.getContext('2d');
+      const col = '#' + hex.toString(16).padStart(6, '0');
+      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, col); g.addColorStop(0.7, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+      return new THREE.CanvasTexture(c);
+    }
+    function groundPatch(x, z, radius, hex, opacity) {
+      const mesh = new THREE.Mesh(
+        new THREE.CircleGeometry(radius, 32),
+        new THREE.MeshBasicMaterial({ map: radialTex(hex), transparent: true, opacity, depthWrite: false })
+      );
+      mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, 0.05, z);
+      app.scene.add(mesh);
+    }
+    const PATCH = {
+      s5_crater:   { color: 0x16181c, radius: 10, opacity: 0.85 }, // impact shadow — dark
+      s5_mare:     { color: 0x3f4652, radius: 16, opacity: 0.9 },  // basalt sea — same dark tone as the old Mat_Mare tint
+      s5_regolith: { color: 0xcdb99a, radius: 10, opacity: 0.55 }  // loose dusty soil — lighter, sandy
+    };
+
     const TRIGGERS = { Trigger_Crater: 's5_crater', Trigger_Mare: 's5_mare', Trigger_Regolith: 's5_regolith' };
     const tour = [];
     floor.traverse(o => {
@@ -5416,6 +5449,8 @@ const SCENE_BUILDERS = [
       o.traverse(m => { if (m.isMesh) reg(m, key); });
       const wp = new THREE.Vector3(); o.getWorldPosition(wp);
       tour.push([wp.x, wp.z]);
+      const p = PATCH[key];
+      if (p) groundPatch(wp.x, wp.z, p.radius, p.color, p.opacity);
     });
     tour.push([0, 0]);   // ...and the lander at the landing zone
 
