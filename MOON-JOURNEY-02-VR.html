@@ -4695,10 +4695,10 @@ function freshScene(bg) {
 
 function glowMat(hex, op) { return new THREE.MeshStandardMaterial({ color: hex, emissive: hex, emissiveIntensity: 0.55, transparent: op !== undefined, opacity: op !== undefined ? op : 1 }); }
 function mat(hex, extra) { return new THREE.MeshStandardMaterial(Object.assign({ color: hex, roughness: 0.7, metalness: 0.15 }, extra || {})); }
-function reg(mesh, key) {
+function reg(mesh, key, autoSizeLabel) {
   mesh.userData.key = key;
   sm.registerInteractable({ mesh, key });
-  attachFloatingLabel(mesh, key);
+  attachFloatingLabel(mesh, key, autoSizeLabel);
 }
 function shortLabel(key) { return language.t(key).split(':')[0].split('(')[0].trim(); }
 function floatingLabelTexture(text) {
@@ -4713,17 +4713,22 @@ function floatingLabelTexture(text) {
   x.fillText(text, 160, 40);
   return new THREE.CanvasTexture(c);
 }
-function attachFloatingLabel(mesh, key) {
+function attachFloatingLabel(mesh, key, autoSizeLabel) {
   if (!app._labeledKeys) app._labeledKeys = new Set();
   if (app._labeledKeys.has(key) || !mesh.geometry) return;
   app._labeledKeys.add(key);
   mesh.geometry.computeBoundingBox();
   const bb = mesh.geometry.boundingBox;
-  // scale the card with the collider it sits on (never smaller than the
-  // original fixed size) — a card sized for the old toy-diorama colliders
-  // reads as tiny next to S1's real-scale rocket (r*SCALE, SCALE≈8.9)
-  const size = bb ? bb.getSize(new THREE.Vector3()) : new THREE.Vector3(1, 1, 1);
-  const k = Math.min(10, Math.max(1, Math.max(size.x, size.z) / 1.5));
+  // fixed card size everywhere by default (the original, preferred look) —
+  // only opts into scaling with the mesh when a caller explicitly asks for
+  // it (S1's real-scale rocket, SCALE≈8.9x the old diorama colliders).
+  // A global size-by-geometry rule previously enlarged cards on every
+  // scene's normal-sized props too, not just S1 — reverted to opt-in.
+  let k = 1;
+  if (autoSizeLabel) {
+    const size = bb ? bb.getSize(new THREE.Vector3()) : new THREE.Vector3(1, 1, 1);
+    k = Math.min(10, Math.max(1, Math.max(size.x, size.z) / 1.5));
+  }
   const topY = (bb ? bb.max.y : 0.5) + 0.4 * k;
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: floatingLabelTexture(shortLabel(key)), transparent: true, depthTest: false }));
   spr.scale.set(1.7 * k, 0.42 * k, 1);
@@ -4769,6 +4774,19 @@ const SCENE_BUILDERS = [
     freshScene(0x8fd0f5);
     app.stars.material.opacity = 0;
 
+    // the pad39b model's exact 420x420m footprint has a hard edge against
+    // the flat sky — pulling the camera back shows it as a green square
+    // floating in a blue void, which reads as small no matter how "real
+    // scale" the model actually is (same root cause fixed for S5's horizon:
+    // geometry size alone doesn't sell scale, depth cues do). A large flat
+    // grass extension plus morning haze hides that edge past the model.
+    app.scene.fog = new THREE.FogExp2(0x8fd0f5, 0.0015);
+    const groundExt = new THREE.Mesh(
+      new THREE.PlaneGeometry(2400, 2400),
+      new THREE.MeshStandardMaterial({ color: 0x4f9a54, roughness: 1 })
+    );
+    groundExt.rotation.x = -Math.PI / 2; groundExt.position.y = -0.3; app.scene.add(groundExt);
+
     const env = MODELS.pad39b.clone(true);            // real-world scale already, no normalized()
     app.scene.add(env);
 
@@ -4790,7 +4808,7 @@ const SCENE_BUILDERS = [
         new THREE.CylinderGeometry(r, r, y1 - y0, 16),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.001, depthWrite: false })
       );
-      cyl.position.set(x || 0, (y0 + y1) / 2, 0); app.scene.add(cyl); reg(cyl, key);
+      cyl.position.set(x || 0, (y0 + y1) / 2, 0); app.scene.add(cyl); reg(cyl, key, true);
       if (!bandMeshes[key]) bandMeshes[key] = { y: (y0 + y1) / 2, r };
     }
     /* radii kept apart so zones never shadow each other — same ratios as the
@@ -5456,18 +5474,27 @@ const SCENE_BUILDERS = [
       ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
       return new THREE.CanvasTexture(c);
     }
-    function groundPatch(x, z, radius, hex, opacity) {
+    function groundPatch(x, y, z, radius, hex, opacity) {
       const mesh = new THREE.Mesh(
         new THREE.CircleGeometry(radius, 32),
         new THREE.MeshBasicMaterial({ map: radialTex(hex), transparent: true, opacity, depthWrite: false })
       );
-      mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, 0.05, z);
+      mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, y + 0.05, z);
       app.scene.add(mesh);
     }
+    // a flat disc has zero vertical profile — from a standing eye-level
+    // view looking across it near-edge-on it nearly vanishes. A torus lying
+    // flat still has real height (its tube), so it stays visible as a rim
+    // from the side, not just from above.
+    function patchRim(x, y, z, radius, hex) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.5, 8, 40), new THREE.MeshBasicMaterial({ color: hex }));
+      ring.rotation.x = Math.PI / 2; ring.position.set(x, y + 0.15, z);
+      app.scene.add(ring);
+    }
     const PATCH = {
-      s5_crater:   { color: 0x16181c, radius: 10, opacity: 0.85 }, // impact shadow — dark
-      s5_mare:     { color: 0x3f4652, radius: 16, opacity: 0.9 },  // basalt sea — same dark tone as the old Mat_Mare tint
-      s5_regolith: { color: 0xcdb99a, radius: 10, opacity: 0.55 }  // loose dusty soil — lighter, sandy
+      s5_crater:   { color: 0x16181c, radius: 10, opacity: 0.85, rim: 0x9aa2ad }, // impact shadow, bright ejecta rim
+      s5_mare:     { color: 0x3f4652, radius: 16, opacity: 0.9,  rim: 0x6b93ff }, // basalt sea (same dark tone as the old Mat_Mare tint), cool blue rim hints at "sea"
+      s5_regolith: { color: 0xcdb99a, radius: 10, opacity: 0.55, rim: 0xf0dfc0 }  // loose dusty soil, bright sandy rim
     };
 
     const TRIGGERS = { Trigger_Crater: 's5_crater', Trigger_Mare: 's5_mare', Trigger_Regolith: 's5_regolith' };
@@ -5479,7 +5506,11 @@ const SCENE_BUILDERS = [
       const wp = new THREE.Vector3(); o.getWorldPosition(wp);
       tour.push([wp.x, wp.z]);
       const p = PATCH[key];
-      if (p) groundPatch(wp.x, wp.z, p.radius, p.color, p.opacity);
+      // use the trigger's own world Y, not a flat guess — it marks the
+      // actual local terrain height (craters dip well below the general
+      // ground level; a flat y put patches floating over/buried under the
+      // real sculpted surface, invisible from most angles)
+      if (p) { groundPatch(wp.x, wp.y, wp.z, p.radius, p.color, p.opacity); patchRim(wp.x, wp.y, wp.z, p.radius, p.rim); }
     });
     tour.push([0, 0]);   // ...and the lander at the landing zone
 
