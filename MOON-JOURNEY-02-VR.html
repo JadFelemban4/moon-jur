@@ -58,10 +58,43 @@ button{font-family:inherit;cursor:pointer;border:none;border-radius:12px;padding
 #cert .card{border-color:var(--gold);box-shadow:0 0 80px rgba(245,158,11,.3)}
 #cert-meta{margin-top:16px;color:var(--cyan);font-family:'Exo 2';font-size:.85rem;letter-spacing:.05em}
 .moonicon{font-size:2.4rem}
+#amad-login{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at 50% 25%,rgba(124,58,237,.24),transparent 42%),rgba(6,10,22,.94);backdrop-filter:blur(10px)}
+#amad-login[hidden]{display:none}
+.amad-login-card{width:min(430px,94vw);background:linear-gradient(160deg,#111c36,#0F172A);border:1px solid rgba(34,211,238,.55);border-radius:22px;padding:28px;box-shadow:0 0 70px rgba(34,211,238,.16);text-align:center}
+.amad-login-logo{font-family:'Exo 2','Tajawal',sans-serif;font-size:.78rem;letter-spacing:.14em;color:var(--cyan);margin-bottom:10px}
+.amad-login-card h1{font-size:1.45rem;color:var(--gold);margin:0}
+.amad-login-card p{font-size:.9rem;color:#94a3b8;line-height:1.7;margin:8px 0 20px}
+.amad-field{text-align:start;margin-top:13px}
+.amad-field label{display:block;font-size:.8rem;color:#cbd5e1;margin-bottom:6px}
+.amad-field input{width:100%;border:1px solid #334155;border-radius:12px;padding:12px 14px;background:#0b1224;color:#f8fafc;font:inherit;direction:ltr;text-align:left;outline:none}
+.amad-field input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(34,211,238,.12)}
+#amad-login-submit{width:100%;margin-top:18px;background:var(--purple);color:#fff;padding:12px 18px;font-size:.95rem}
+#amad-login-submit:disabled{background:#334155;color:#94a3b8;cursor:wait}
+#amad-login-status{min-height:24px;margin-top:12px;font-size:.82rem;line-height:1.6;color:#94a3b8}
+#amad-login-status.error{color:#fca5a5}
+#amad-login-status.success{color:#67e8f9}
 </style>
 </head>
 <body>
 <div id="gl"></div>
+
+<div id="amad-login" role="dialog" aria-modal="true" aria-labelledby="amad-login-title">
+  <form id="amad-login-form" class="amad-login-card">
+    <div class="amad-login-logo">AL-AMAD XR</div>
+    <h1 id="amad-login-title">تسجيل دخول المتعلم</h1>
+    <p>سجّل الدخول بحساب منصة الأمَد لبدء رحلة القمر وحفظ نتيجتك.</p>
+    <div class="amad-field">
+      <label for="amad-email">البريد الإلكتروني</label>
+      <input id="amad-email" name="email" type="email" autocomplete="username" inputmode="email" required>
+    </div>
+    <div class="amad-field">
+      <label for="amad-password">كلمة المرور</label>
+      <input id="amad-password" name="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button id="amad-login-submit" type="submit">تسجيل الدخول</button>
+    <div id="amad-login-status" role="status" aria-live="polite"></div>
+  </form>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" onerror="document.body.innerHTML='<div dir=&quot;rtl&quot; style=&quot;display:flex;height:100vh;align-items:center;justify-content:center;background:#0F172A;color:#e2e8f0;font-family:Tajawal,Exo 2,sans-serif;text-align:center;padding:24px;box-sizing:border-box;&quot;><div style=&quot;max-width:420px;border:1px solid rgba(245,158,11,.5);border-radius:16px;padding:24px;background:rgba(15,23,42,.9)&quot;><div style=&quot;font-size:2rem&quot;>&#9888;&#65039;</div><h2 style=&quot;color:#F59E0B;margin:10px 0&quot;>تعذّر تحميل محرك العرض ثلاثي الأبعاد</h2><p style=&quot;color:#cbd5e1;line-height:1.7&quot;>هذه التجربة تحتاج اتصالاً بالإنترنت لتحميل مكتبة Three.js من الخادم الخارجي (cdnjs). تأكد من اتصالك بالشبكة ثم أعد تحميل الصفحة.</p><button onclick=&quot;location.reload()&quot; style=&quot;margin-top:14px;background:#7C3AED;color:#fff;border:none;border-radius:12px;padding:10px 24px;font-weight:700;cursor:pointer&quot;>إعادة المحاولة</button></div></div>'"></script>
 <script>
@@ -3717,6 +3750,259 @@ const TEX_MOON = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD//gAPSURMIFR
 
 const EXPERIENCE_ID = 'AMAD-MOON-JOURNEY-01';
 
+/* ---------------- Al-Amad dashboard API ---------------- */
+
+const AMAD_API_CONFIG = Object.freeze({
+  baseUrl: 'https://dashboard.al-amad.com.sa/api',
+  experimentId: 24
+});
+
+function createAmadAPIError(message, status = 0, payload = null) {
+  const error = new Error(message);
+  error.name = 'AmadAPIError';
+  error.isAmadAPIError = true;
+  error.status = status;
+  error.payload = payload;
+  return error;
+}
+
+function createAmadDashboardClient(config) {
+  const tokenKey = `amad_token_exp_${config.experimentId}`;
+  const attemptKey = `amad_attempt_exp_${config.experimentId}`;
+  let token = null;
+  let attemptId = null;
+  let user = null;
+  let finishing = null;
+  let finished = false;
+
+  function storageGet(key) {
+    try { return sessionStorage.getItem(key); } catch (e) { return null; }
+  }
+  function storageSet(key, value) {
+    try { sessionStorage.setItem(key, String(value)); } catch (e) {}
+  }
+  function storageRemove(key) {
+    try { sessionStorage.removeItem(key); } catch (e) {}
+  }
+
+  token = storageGet(tokenKey);
+  const savedAttempt = Number(storageGet(attemptKey));
+  if (Number.isInteger(savedAttempt) && savedAttempt > 0) attemptId = savedAttempt;
+
+  async function request(path, { method = 'GET', body = null, authenticated = true } = {}) {
+    const headers = { Accept: 'application/json' };
+    if (body !== null) headers['Content-Type'] = 'application/json';
+    if (authenticated) {
+      if (!token) throw createAmadAPIError('يجب تسجيل الدخول أولاً.', 401);
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    let response;
+    try {
+      response = await fetch(`${config.baseUrl}${path}`, {
+        method,
+        headers,
+        body: body === null ? undefined : JSON.stringify(body)
+      });
+    } catch (error) {
+      throw createAmadAPIError('تعذر الاتصال بمنصة الأمَد. تحقق من الشبكة أو إعدادات CORS.', 0);
+    }
+
+    const raw = await response.text();
+    let data = null;
+    if (raw) {
+      try { data = JSON.parse(raw); } catch (e) { data = { message: raw }; }
+    }
+    if (!response.ok) {
+      const message = data && (data.message || data.error)
+        ? String(data.message || data.error)
+        : `فشل طلب منصة الأمَد (${response.status}).`;
+      throw createAmadAPIError(message, response.status, data);
+    }
+    return data || {};
+  }
+
+  function allowedExperiment(data) {
+    const experiments = Array.isArray(data && data.experiments) ? data.experiments : [];
+    return experiments.find(exp => Number(exp.id) === config.experimentId && exp.status === 'active') || null;
+  }
+
+  function requireExperimentAccess(data) {
+    const experiment = allowedExperiment(data);
+    if (!experiment) {
+      throw createAmadAPIError(`التجربة رقم ${config.experimentId} غير متاحة لهذا الحساب.`, 403, data);
+    }
+    return experiment;
+  }
+
+  function extractAttemptId(data) {
+    const candidates = [
+      data && data.attempt_id,
+      data && data.attempt && data.attempt.id,
+      data && data.data && data.data.attempt_id,
+      data && data.data && data.data.attempt && data.data.attempt.id,
+      data && data.data && data.data.id,
+      data && data.id
+    ];
+    for (const value of candidates) {
+      const id = Number(value);
+      if (Number.isInteger(id) && id > 0) return id;
+    }
+    return null;
+  }
+
+  function clearSession() {
+    token = null;
+    attemptId = null;
+    user = null;
+    finished = false;
+    finishing = null;
+    storageRemove(tokenKey);
+    storageRemove(attemptKey);
+  }
+
+  async function login(email, password) {
+    clearSession();
+    const data = await request('/vr/login', {
+      method: 'POST',
+      authenticated: false,
+      body: { email, password }
+    });
+    if (!data.token || typeof data.token !== 'string') {
+      throw createAmadAPIError('لم تُرجع المنصة رمز دخول صالحًا.', 502, data);
+    }
+    requireExperimentAccess(data);
+    token = data.token;
+    user = data.user || null;
+    storageSet(tokenKey, token);
+    return data;
+  }
+
+  async function restoreSession() {
+    if (!token) return null;
+    try {
+      const data = await request('/vr/me');
+      requireExperimentAccess(data);
+      user = data.user || null;
+      return data;
+    } catch (error) {
+      clearSession();
+      return null;
+    }
+  }
+
+  async function startAttempt() {
+    if (attemptId) return { id: attemptId, restored: true };
+    const data = await request(`/vr/experiments/${config.experimentId}/attempts`, { method: 'POST' });
+    const id = extractAttemptId(data);
+    if (!id) {
+      console.error('Al-Amad start-attempt response did not contain an attempt ID:', data);
+      throw createAmadAPIError('بدأت المنصة الطلب لكن ردّها لم يحتوِ على رقم المحاولة.', 502, data);
+    }
+    attemptId = id;
+    storageSet(attemptKey, attemptId);
+    return data;
+  }
+
+  async function finishAttempt(score) {
+    if (finished) return { alreadyFinished: true };
+    if (finishing) return finishing;
+    if (!attemptId) throw createAmadAPIError('رقم المحاولة غير موجود؛ لا يمكن حفظ النتيجة.', 409);
+    finishing = request(`/vr/attempts/${attemptId}/finish`, {
+      method: 'POST',
+      body: { status: 'completed', score }
+    }).then(data => {
+      finished = true;
+      storageRemove(attemptKey);
+      return data;
+    }).finally(() => { finishing = null; });
+    return finishing;
+  }
+
+  return {
+    login,
+    restoreSession,
+    startAttempt,
+    finishAttempt,
+    clearSession,
+    get user() { return user; },
+    get attemptId() { return attemptId; },
+    get isAuthenticated() { return !!token; }
+  };
+}
+
+const amadDashboard = createAmadDashboardClient(AMAD_API_CONFIG);
+
+function readableAmadError(error) {
+  if (!error || !error.isAmadAPIError) return 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+  if (error.status === 0) return error.message;
+  if (error.status === 401) return 'البريد الإلكتروني أو كلمة المرور غير صحيحة، أو انتهت الجلسة.';
+  if (error.status === 403) return error.message || 'هذا الحساب غير مصرح له بدخول التجربة.';
+  if (error.status === 422) return error.message || 'تحقق من بيانات تسجيل الدخول.';
+  return error.message;
+}
+
+function setAmadAuthReady(ready) {
+  app.authReady = !!ready;
+  if (app.updateEntryButton) app.updateEntryButton();
+}
+
+async function initAmadLogin() {
+  const overlay = document.getElementById('amad-login');
+  const form = document.getElementById('amad-login-form');
+  const email = document.getElementById('amad-email');
+  const password = document.getElementById('amad-password');
+  const submit = document.getElementById('amad-login-submit');
+  const status = document.getElementById('amad-login-status');
+
+  function setStatus(message, type = '') {
+    status.textContent = message;
+    status.className = type;
+  }
+  function openLogin() {
+    overlay.hidden = false;
+    setAmadAuthReady(false);
+  }
+  function closeLogin() {
+    overlay.hidden = true;
+    password.value = '';
+    setAmadAuthReady(true);
+  }
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    submit.disabled = true;
+    setStatus('جارٍ تسجيل الدخول والتحقق من صلاحية التجربة…');
+    try {
+      const data = await amadDashboard.login(email.value.trim(), password.value);
+      const name = data.user && data.user.name ? `، ${data.user.name}` : '';
+      setStatus(`تم تسجيل الدخول${name}.`, 'success');
+      closeLogin();
+    } catch (error) {
+      console.error('Al-Amad login failed:', error);
+      openLogin();
+      setStatus(readableAmadError(error), 'error');
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  if (!amadDashboard.isAuthenticated) {
+    openLogin();
+    return;
+  }
+
+  submit.disabled = true;
+  setStatus('جارٍ التحقق من الجلسة السابقة…');
+  const restored = await amadDashboard.restoreSession();
+  submit.disabled = false;
+  if (restored) closeLogin();
+  else {
+    openLogin();
+    setStatus('انتهت الجلسة السابقة. سجّل الدخول من جديد.');
+  }
+}
+
 /* ---------------- Language service (Arabic-first) ---------------- */
 
 const DICT = {
@@ -4237,6 +4523,7 @@ const app = {
   raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2(),
   anim: [], t: 0, stars: null, stepTargets: [], cockpit: null,
   lessonFx: null, onLessonEnd: null, shake: 0,
+  authReady: false, modelsReady: false, xrSessionSupported: null,
   // free-look + walking state
   lookYaw: 0, lookPitch: 0, baseLookTarget: null,
   walkable: false, walkBounds: 10, moveVec: { x: 0, y: 0 },
@@ -4395,10 +4682,29 @@ function addVRButton() {
     + 'font-weight:700;font-size:1rem;cursor:pointer;box-shadow:0 0 30px rgba(124,58,237,.5)';
   document.body.appendChild(b);
   app.vrButton = b;
-  if (!navigator.xr) { b.textContent = 'WebXR غير متاح — عرض سطح المكتب'; b.disabled = true; return; }
-  b.disabled = true;
-  b.textContent = 'جارٍ تحميل نماذج ناسا…';
-  let sessionSupported = null;
+  app.updateEntryButton = () => {
+    if (!navigator.xr) {
+      b.disabled = true;
+      b.textContent = 'WebXR غير متاح — عرض سطح المكتب';
+      return;
+    }
+    if (!app.authReady) {
+      b.disabled = true;
+      b.textContent = 'سجّل الدخول أولاً';
+      return;
+    }
+    if (!app.modelsReady) {
+      b.disabled = true;
+      b.textContent = 'جارٍ تحميل نماذج ناسا…';
+      return;
+    }
+    b.disabled = false;
+    b.textContent = (app.xrSessionSupported === false)
+      ? 'ENTER VR — افتح الرابط في متصفح النظارة'
+      : 'ENTER VR';
+  };
+  app.updateEntryButton();
+  if (!navigator.xr) return;
 
   const dbg = document.createElement('pre');
   dbg.id = 'xrdebug';
@@ -4442,12 +4748,28 @@ function addVRButton() {
       } catch (e1) {
         session = await navigator.xr.requestSession('immersive-vr'); // minimal fallback
       }
-      session.addEventListener('end', () => { b.style.display = 'block'; b.textContent = 'ENTER VR'; entering = false; });
+      session.addEventListener('end', () => {
+        b.style.display = 'block';
+        entering = false;
+        app.updateEntryButton();
+      });
       try {
         await app.renderer.xr.setSession(session);
       } catch (eRef) {
         app.renderer.xr.setReferenceSpaceType('local');
         await app.renderer.xr.setSession(session);
+      }
+      b.textContent = 'جارٍ إنشاء محاولة…';
+      try {
+        await amadDashboard.startAttempt();
+      } catch (apiError) {
+        console.error('Al-Amad attempt start failed:', apiError);
+        try { await session.end(); } catch (endError) {}
+        b.style.display = 'block';
+        b.disabled = false;
+        b.textContent = readableAmadError(apiError);
+        entering = false;
+        return;
       }
       b.style.display = 'none';
       if (!started) { started = true; start(); }
@@ -4464,14 +4786,11 @@ function addVRButton() {
   };
 
   navigator.xr.isSessionSupported('immersive-vr').then(ok => {
-    sessionSupported = ok;
-    if (!ok && app.modelsReady) b.textContent = 'ENTER VR — افتح الرابط في متصفح النظارة';
+    app.xrSessionSupported = ok;
+    app.updateEntryButton();
   }).catch(() => { /* keep the button active; a click will surface the real reason */ });
 
-  app.onModelsReady = () => {
-    b.disabled = false;
-    b.textContent = (sessionSupported === false) ? 'ENTER VR — افتح الرابط في متصفح النظارة' : 'ENTER VR';
-  };
+  app.onModelsReady = app.updateEntryButton;
 }
 
 function castFromController(controller) {
@@ -5650,15 +5969,35 @@ function next() {
   openLesson();
 }
 
+function calculateDashboardScore() {
+  return STAGES.reduce((score, stage, index) => score + (sm.stageState(index).quizPassed ? 1 : 0), 0);
+}
+
+async function saveCompletionToDashboard(score) {
+  try {
+    await amadDashboard.finishAttempt(score);
+    toast(language.getLang() === 'ar'
+      ? 'تم حفظ إكمال التجربة والنتيجة في منصة الأمَد'
+      : 'Completion and score saved to Al-Amad', 'ok');
+  } catch (error) {
+    console.error('Al-Amad attempt finish failed:', error);
+    toast(language.getLang() === 'ar'
+      ? 'اكتملت الرحلة، لكن تعذر حفظ النتيجة: ' + readableAmadError(error)
+      : 'Journey completed, but saving failed: ' + readableAmadError(error), 'err');
+  }
+}
+
 function showCertificate(cert) {
+  const score = calculateDashboardScore();
   app.hud.blocking = true;
   app.hud.mode = 'cert';
   app.hud.cert = {
     title: language.getLang() === 'ar' ? cert.title.ar : cert.title.en,
     body: language.getLang() === 'ar' ? cert.body.ar : cert.body.en,
-    meta: cert.stagesCompleted.join(' · ') + '  |  ' + new Date().toLocaleDateString('en-GB')
+    meta: cert.stagesCompleted.join(' · ') + '  |  ' + score + ' / ' + STAGES.length + '  |  ' + new Date().toLocaleDateString('en-GB')
   };
   drawWristPanel();
+  saveCompletionToDashboard(score);
 }
 
 /* ---------------- loop ---------------- */
@@ -5705,6 +6044,10 @@ function start() {
 
 window.addEventListener('DOMContentLoaded', () => {
   initGL();
+  initAmadLogin().catch(error => {
+    console.error('Al-Amad login UI initialization failed:', error);
+    setAmadAuthReady(false);
+  });
   freshScene();
   app.player.position.set(0, 0, 30); app.camera.position.set(0, 0, 0);
   loadModels().then(() => {
